@@ -1,0 +1,10 @@
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.pytest_cache/
+**/.mypy_cache/
+.git/
+environment/
+!environment/entrypoint.sh
+*.md
+**/.DS_Store

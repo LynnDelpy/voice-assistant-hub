@@ -1,0 +1,23 @@
+# TLS termination + mTLS client-cert auth in front of the hub.
+# This is the plan's M2: the hub has no auth code. The proxy is the only way in,
+# it requires a valid client certificate, and it hands the hub the cert subject
+# as X-Auth-Subject (information for the audit log, not an authorization input).
+{
+	auto_https off
+	admin off
+}
+
+https://localhost:8443, https://127.0.0.1:8443 {
+	tls /certs/server.crt /certs/server.key {
+		client_auth {
+			mode require_and_verify
+			trusted_ca_cert_file /certs/ca.crt
+		}
+	}
+
+	reverse_proxy hub:8080 {
+		# `header_up Field value` REPLACES any client-supplied value, so a caller
+		# cannot spoof its subject: it is always the verified client cert's.
+		header_up X-Auth-Subject {http.request.tls.client.subject}
+	}
+}

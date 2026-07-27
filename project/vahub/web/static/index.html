@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vahub</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 1.5rem;
+           background: Canvas; color: CanvasText; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem; }
+    .sub { opacity: .6; font-weight: 400; }
+    .conn { font-size: .75rem; opacity: .6; margin-left: .5rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    .card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 8px; padding: 1rem; }
+    .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin: 0 0 .75rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent); font-size: .85rem; }
+    th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; opacity: .6; }
+    .dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .45rem; vertical-align: middle; }
+    .ready { background: #2ea043; } .degraded { background: #d29922; } .starting { background: #58a6ff; }
+    .failed { background: #f85149; } .stopped, .unconfigured { background: #8b949e; }
+    .state { text-transform: capitalize; }
+    #log { margin-top: 1rem; height: 160px; overflow-y: auto; background: color-mix(in srgb, CanvasText 6%, transparent);
+           border-radius: 6px; padding: .5rem .7rem; font-size: .78rem; white-space: pre-wrap; }
+    #chat { display: flex; flex-direction: column; height: 460px; }
+    #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: .6rem; padding-right: .3rem; }
+    .msg { padding: .5rem .7rem; border-radius: 8px; font-size: .88rem; max-width: 90%; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: color-mix(in srgb, #58a6ff 25%, transparent); }
+    .msg.assistant { align-self: flex-start; background: color-mix(in srgb, CanvasText 8%, transparent); }
+    .steps { align-self: flex-start; font-size: .72rem; opacity: .65; max-width: 90%; white-space: pre-wrap; word-break: break-word; }
+    .composer { display: flex; gap: .5rem; margin-top: .75rem; }
+    .composer input { flex: 1; padding: .55rem .7rem; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+                      background: Canvas; color: CanvasText; font: inherit; }
+    .composer button { padding: .55rem .9rem; border-radius: 6px; border: none; background: #2ea043; color: white; font: inherit; cursor: pointer; }
+    .composer button:disabled { opacity: .5; cursor: default; }
+    .composer .mic { background: color-mix(in srgb, CanvasText 15%, transparent); color: CanvasText; }
+    .composer .mic.rec { background: #f85149; color: white; }
+    .hint { font-size: .72rem; opacity: .55; margin-top: .4rem; }
+    .hint label { cursor: pointer; }
+    #pending:not(:empty) { margin-bottom: 1rem; }
+    .confirm-card { border: 1px solid #d29922; background: color-mix(in srgb, #d29922 12%, transparent);
+                    border-radius: 8px; padding: .7rem .9rem; margin-bottom: .5rem; display: flex;
+                    align-items: center; gap: .8rem; flex-wrap: wrap; }
+    .confirm-card .txt { flex: 1; font-size: .85rem; }
+    .confirm-card button { padding: .4rem .8rem; border-radius: 6px; border: none; cursor: pointer; font: inherit; }
+    .confirm-card .yes { background: #f85149; color: white; }
+    .confirm-card .no { background: color-mix(in srgb, CanvasText 15%, transparent); color: CanvasText; }
+  </style>
+</head>
+<body>
+  <h1>vahub <span class="sub">hub console</span><span class="conn" id="conn">connecting...</span></h1>
+  <div id="pending"></div>
+  <div class="grid">
+    <div class="card" id="chat">
+      <h2>Chat</h2>
+      <div id="messages"></div>
+      <div class="composer">
+        <input id="input" type="text" placeholder="e.g. what time is it in Tokyo?" autocomplete="off" />
+        <button id="mic" class="mic" title="click to talk">🎤</button>
+        <button id="send">Send</button>
+      </div>
+      <div class="hint" id="hint">
+        <label><input type="checkbox" id="speak" checked /> speak replies</label>
+        &middot; <span id="voicehint">Talk or type. It decides which tool to call.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Modules</h2>
+      <table>
+        <thead><tr><th>Module</th><th>State</th><th>Ver</th><th>Tools</th><th>Last error</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    // Every value that could come from an untrusted module is written with
+    // textContent, never innerHTML, so a hostile tool name cannot inject script.
+    function cell(text) { const td = document.createElement('td'); td.textContent = text ?? ''; return td; }
+
+    const rows = document.getElementById('rows');
+    const logEl = document.getElementById('log');
+    const conn = document.getElementById('conn');
+    const modules = new Map();
+
+    function renderModules() {
+      rows.replaceChildren();
+      for (const m of [...modules.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+        const tr = document.createElement('tr');
+        tr.appendChild(cell(m.name));
+        const st = document.createElement('td');
+        const dot = document.createElement('span'); dot.className = 'dot ' + (m.state || '');
+        const label = document.createElement('span'); label.className = 'state'; label.textContent = m.state || '';
+        st.append(dot, label); tr.appendChild(st);
+        tr.appendChild(cell(m.version || ''));
+        tr.appendChild(cell((m.tools || []).filter(t => !t.startsWith('__')).join(', ') || '—'));
+        tr.appendChild(cell(m.last_error || ''));
+        rows.appendChild(tr);
+      }
+    }
+    function logLine(text) {
+      const d = document.createElement('div'); d.textContent = text;
+      logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+      while (logEl.childElementCount > 400) logEl.removeChild(logEl.firstChild);
+    }
+
+    // ---- live status over the websocket ----
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${location.host}/ws/events`);
+      ws.onopen = () => { conn.textContent = 'live'; };
+      ws.onclose = () => { conn.textContent = 'reconnecting...'; setTimeout(connect, 1500); };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'snapshot') {
+          modules.clear();
+          for (const m of msg.modules) modules.set(m.name, m);
+          renderModules();
+        } else if (msg.type === 'state') {
+          fetch('/api/modules').then(r => r.json()).then(list => {
+            for (const x of list) modules.set(x.name, x);
+            renderModules();
+          });
+        } else if (msg.type === 'log') {
+          logLine(`[${msg.data.module}] ${msg.data.line}`);
+        } else if (msg.type === 'confirm') {
+          addPending(msg.data);
+        } else if (msg.type === 'schedule') {
+          const d = msg.data;
+          logLine(`[schedule] ${d.schedule} ${d.ok ? 'ok' : 'FAILED at step ' + d.failed_step}`);
+        }
+      };
+    }
+    connect();
+
+    // ---- pending destructive confirmations ----
+    const pendingEl = document.getElementById('pending');
+    const pendingItems = new Map();
+    function renderPending() {
+      pendingEl.replaceChildren();
+      for (const p of pendingItems.values()) {
+        const card = document.createElement('div'); card.className = 'confirm-card';
+        const txt = document.createElement('div'); txt.className = 'txt';
+        txt.textContent = `Confirm: ${p.module}.${p.tool}  (${p.reason || 'destructive action'})`;
+        const yes = document.createElement('button'); yes.className = 'yes'; yes.textContent = 'Confirm';
+        const no = document.createElement('button'); no.className = 'no'; no.textContent = 'Dismiss';
+        yes.onclick = async () => {
+          yes.disabled = true;
+          const r = await fetch('/api/confirm/' + encodeURIComponent(p.pending_id), { method: 'POST' });
+          logLine(`[confirm] ${p.module}.${p.tool} -> ${JSON.stringify(await r.json())}`);
+          pendingItems.delete(p.pending_id); renderPending();
+        };
+        no.onclick = () => { pendingItems.delete(p.pending_id); renderPending(); };
+        card.append(txt, yes, no); pendingEl.appendChild(card);
+      }
+    }
+    function addPending(p) { pendingItems.set(p.pending_id, p); renderPending(); }
+    fetch('/api/pending').then(r => r.json()).then(list => {
+      for (const p of list) pendingItems.set(p.id, { pending_id: p.id, module: p.module, tool: p.tool });
+      renderPending();
+    }).catch(() => {});
+
+    // ---- chat ----
+    const messagesEl = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    let sessionId = null;
+
+    function bubble(text, cls) {
+      const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text;
+      messagesEl.appendChild(d); messagesEl.scrollTop = messagesEl.scrollHeight; return d;
+    }
+    function stepLine(step) {
+      const d = document.createElement('div'); d.className = 'steps';
+      d.textContent = `→ ${step.tool} ${JSON.stringify(step.args)} ⇒ ${JSON.stringify(step.result)}`;
+      messagesEl.appendChild(d); messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = ''; sendBtn.disabled = true;
+      bubble(text, 'user');
+      const pending = bubble('...', 'assistant');
+      try {
+        const r = await fetch('/api/chat', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message: text, session_id: sessionId }),
+        });
+        const data = await r.json();
+        if (!r.ok) { pending.textContent = 'error: ' + (data.detail || r.status); return; }
+        sessionId = data.session_id;
+        for (const s of (data.steps || [])) stepLine(s);
+        pending.textContent = data.reply || '(no reply)';
+        speak(data.reply || '');
+      } catch (e) {
+        pending.textContent = 'network error: ' + e;
+      } finally {
+        sendBtn.disabled = false; input.focus();
+      }
+    }
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+    // ---- voice: mic input + spoken replies ----
+    const micBtn = document.getElementById('mic');
+    const speakToggle = document.getElementById('speak');
+    const voiceHint = document.getElementById('voicehint');
+    let cfg = { stt_provider: 'mock', tts_provider: 'mock' };
+    let recognizer = null, recording = false, mediaRecorder = null, chunks = [];
+
+    function speak(text) {
+      if (!text || !speakToggle.checked) return;
+      if (cfg.tts_provider === 'mock' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      }
+    }
+    function setRec(on) { recording = on; micBtn.classList.toggle('rec', on); micBtn.textContent = on ? '⏹' : '🎤'; }
+
+    async function setupVoice() {
+      try { cfg = await (await fetch('/api/client-config')).json(); } catch (e) {}
+      if (cfg.stt_provider === 'mock') {
+        // Zero-credential path: the browser transcribes locally (Web Speech API).
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+          micBtn.disabled = true; micBtn.title = 'no Web Speech API';
+          voiceHint.textContent = 'Voice input needs Chrome or Edge (Web Speech API). Typing works everywhere.';
+          return;
+        }
+        recognizer = new SR();
+        recognizer.lang = 'en-US'; recognizer.interimResults = false; recognizer.maxAlternatives = 1;
+        recognizer.onresult = (e) => { input.value = e.results[0][0].transcript; send(); };
+        recognizer.onend = () => setRec(false);
+        recognizer.onerror = (e) => { setRec(false); voiceHint.textContent = 'mic error: ' + e.error; };
+        micBtn.onclick = () => {
+          if (recording) { recognizer.stop(); return; }
+          setRec(true); try { recognizer.start(); } catch (e) { setRec(false); }
+        };
+      } else {
+        // Server path: record audio and POST to /api/voice (real STT/TTS).
+        micBtn.onclick = async () => {
+          if (recording) { if (mediaRecorder) mediaRecorder.stop(); return; }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream); chunks = [];
+            mediaRecorder.ondataavailable = (ev) => chunks.push(ev.data);
+            mediaRecorder.onstop = async () => {
+              stream.getTracks().forEach((t) => t.stop()); setRec(false);
+              const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+              const fd = new FormData();
+              fd.append('audio', blob, 'audio.webm');
+              if (sessionId) fd.append('session_id', sessionId);
+              const r = await fetch('/api/voice', { method: 'POST', body: fd });
+              const data = await r.json();
+              if (data.ok === false) { bubble('voice: ' + (data.hint || data.error), 'assistant'); return; }
+              if (data.transcript) bubble(data.transcript, 'user');
+              sessionId = data.session_id || sessionId;
+              for (const s of (data.steps || [])) stepLine(s);
+              bubble(data.reply || '(no reply)', 'assistant');
+              if (data.audio) new Audio('data:' + (data.audio_mime || 'audio/mpeg') + ';base64,' + data.audio).play();
+              else speak(data.reply || '');
+            };
+            mediaRecorder.start(); setRec(true);
+          } catch (e) { voiceHint.textContent = 'mic denied: ' + e; }
+        };
+      }
+    }
+    setupVoice();
+  </script>
+</body>
+</html>

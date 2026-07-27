@@ -1,0 +1,36 @@
+name: homeassistant
+version: 0.1.0
+
+transport: stdio
+command: ["/opt/vh/mod-ha/bin/python", "-m", "vahub_mod_homeassistant"]
+
+config:
+  required: [HA_URL]
+  optional: [HA_TOKEN, HA_TOKEN_FILE, HA_VERIFY_SSL]
+
+runtime:
+  uid: null                                   # prod (LXC) sets a dedicated UID
+  cwd: /var/lib/vahub/modules/homeassistant
+  pythonpath: /app/project/modules/homeassistant   # dev only: live code from the mount
+
+health:
+  interval_s: 30
+  timeout_s: 5
+
+restart:
+  max_retries: 5
+  backoff_base_s: 2
+  reset_after_s: 600
+  startup_timeout_s: 20
+
+# The token must never reach the audit log.
+audit:
+  redact: [token, HA_TOKEN, password, api_key]
+
+tools:
+  list_entities:  { class: read }
+  get_state:      { class: read }
+  light_turn_on:  { class: write }
+  light_turn_off: { class: write }
+  lock_lock:      { class: write }
+  lock_unlock:    { class: destructive }

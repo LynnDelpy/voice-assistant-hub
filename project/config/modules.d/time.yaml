@@ -1,0 +1,31 @@
+name: time
+version: 0.1.0
+
+transport: stdio
+command: ["/opt/vh/mod-time/bin/python", "-m", "vahub_mod_time"]
+
+config:
+  required: []
+  optional: [TZ_DEFAULT]
+
+runtime:
+  uid: null                          # prod (LXC) would set a dedicated UID here
+  cwd: /var/lib/vahub/modules/time
+  pythonpath: /app/project/modules/time   # dev only: live code from the bind mount
+
+health:
+  interval_s: 30
+  timeout_s: 5
+
+restart:
+  max_retries: 5
+  backoff_base_s: 2
+  reset_after_s: 600
+  startup_timeout_s: 20
+
+audit:
+  redact: []
+
+tools:
+  get_current_time:   { class: read }
+  speak_current_time: { class: read }

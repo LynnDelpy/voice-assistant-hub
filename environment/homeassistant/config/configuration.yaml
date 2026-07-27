@@ -1,0 +1,121 @@
+# Real Home Assistant, with virtual (mocked) devices. No physical hardware.
+# The lights/lock/switch are modern template entities backed by input helpers,
+# so a real light.turn_on service call actually flips state and get_state
+# reflects it. Entity ids match the policy and the rest of the hub, so switching
+# from the mock HA to real HA changes nothing elsewhere.
+
+default_config:
+
+homeassistant:
+  name: vahub-demo
+  time_zone: Europe/Zurich
+  country: CH
+  unit_system: metric
+
+# --- helper state behind the virtual devices ---
+input_boolean:
+  li_schlafzimmer: { name: Schlafzimmer Licht }
+  li_wohnzimmer: { name: Wohnzimmer Licht }
+  li_flur: { name: Flur Licht }
+  li_kueche: { name: Kueche Licht }
+  lock_haustuer: { name: Haustuer verriegelt, initial: true }
+  sw_kaffee: { name: Kaffeemaschine }
+
+input_number:
+  bri_schlafzimmer: { name: Schlafzimmer Helligkeit, min: 0, max: 100, initial: 0 }
+  bri_wohnzimmer: { name: Wohnzimmer Helligkeit, min: 0, max: 100, initial: 0 }
+  bri_flur: { name: Flur Helligkeit, min: 0, max: 100, initial: 0 }
+  bri_kueche: { name: Kueche Helligkeit, min: 0, max: 100, initial: 0 }
+
+# --- virtual devices (modern template integration) ---
+template:
+  - light:
+      - name: Schlafzimmer
+        unique_id: vahub_light_schlafzimmer
+        state: "{{ is_state('input_boolean.li_schlafzimmer', 'on') }}"
+        level: "{{ (states('input_number.bri_schlafzimmer') | float(0) * 2.55) | int }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_schlafzimmer }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.li_schlafzimmer }
+        set_level:
+          - action: input_number.set_value
+            target: { entity_id: input_number.bri_schlafzimmer }
+            data: { value: "{{ (brightness | float(0) / 2.55) | int }}" }
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_schlafzimmer }
+      - name: Wohnzimmer
+        unique_id: vahub_light_wohnzimmer
+        state: "{{ is_state('input_boolean.li_wohnzimmer', 'on') }}"
+        level: "{{ (states('input_number.bri_wohnzimmer') | float(0) * 2.55) | int }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_wohnzimmer }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.li_wohnzimmer }
+        set_level:
+          - action: input_number.set_value
+            target: { entity_id: input_number.bri_wohnzimmer }
+            data: { value: "{{ (brightness | float(0) / 2.55) | int }}" }
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_wohnzimmer }
+      - name: Flur
+        unique_id: vahub_light_flur
+        state: "{{ is_state('input_boolean.li_flur', 'on') }}"
+        level: "{{ (states('input_number.bri_flur') | float(0) * 2.55) | int }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_flur }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.li_flur }
+        set_level:
+          - action: input_number.set_value
+            target: { entity_id: input_number.bri_flur }
+            data: { value: "{{ (brightness | float(0) / 2.55) | int }}" }
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_flur }
+      - name: Kueche
+        unique_id: vahub_light_kueche
+        state: "{{ is_state('input_boolean.li_kueche', 'on') }}"
+        level: "{{ (states('input_number.bri_kueche') | float(0) * 2.55) | int }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_kueche }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.li_kueche }
+        set_level:
+          - action: input_number.set_value
+            target: { entity_id: input_number.bri_kueche }
+            data: { value: "{{ (brightness | float(0) / 2.55) | int }}" }
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.li_kueche }
+  - lock:
+      - name: Haustuer
+        unique_id: vahub_lock_haustuer
+        state: "{{ 'locked' if is_state('input_boolean.lock_haustuer', 'on') else 'unlocked' }}"
+        lock:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.lock_haustuer }
+        unlock:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.lock_haustuer }
+  - switch:
+      - name: Kaffee
+        unique_id: vahub_switch_kaffee
+        state: "{{ is_state('input_boolean.sw_kaffee', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.sw_kaffee }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.sw_kaffee }
+  - sensor:
+      - name: Temperatur
+        unique_id: vahub_sensor_temperatur
+        unit_of_measurement: "°C"
+        state: "21.5"

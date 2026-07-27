@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+environment/proxy/certs/
+environment/.env

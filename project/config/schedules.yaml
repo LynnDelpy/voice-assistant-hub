@@ -1,0 +1,12 @@
+# Deterministic routines. Run through the gate as principal=scheduler, without
+# the agent or an LLM. Trigger one now for testing with:
+#   POST /api/schedules/morgenroutine/run
+schedules:
+  - id: morgenroutine
+    cron: "30 6 * * 1-5"        # 06:30 on weekdays, in config.timezone
+    steps:
+      - module: homeassistant
+        tool: light_turn_on
+        args: { entity_id: light.schlafzimmer, brightness_pct: 40 }
+      - module: time
+        tool: speak_current_time

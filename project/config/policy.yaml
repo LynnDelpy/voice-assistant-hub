@@ -1,0 +1,65 @@
+# The policy gate. Default deny. Checked on every tool call, on the argument
+# level, because a Home Assistant token is admin-or-nothing: whatever gets
+# through here has full control, so this file is the only real boundary.
+default: deny
+
+principals:
+  agent: { confirm: [destructive], deny: [] }
+  # The scheduler may act without confirmation, but must never touch locks.
+  scheduler: { confirm: [], deny: ["*.lock_*", "*.unlock_*", "*.delete_*"] }
+  # The dev endpoint and the human confirming at the display.
+  dev: { confirm: [], deny: [] }
+  user: { confirm: [], deny: [] }
+
+rules:
+  # The gate rejects any argument without a constraint entry, so tools that take
+  # arguments must list them (even read tools). tz is an optional timezone name.
+  time.get_current_time:
+    class: read
+    constraints:
+      tz: { max_len: 64 }
+  time.speak_current_time:
+    class: read
+    constraints:
+      tz: { max_len: 64 }
+
+  # Swiss public transport (read-only, free API). Free-text place/stop names.
+  transit.find_connections:
+    class: read
+    constraints:
+      origin: { max_len: 120 }
+      destination: { max_len: 120 }
+      arrive_by: { matches: "^[0-2]?[0-9]:[0-5][0-9]$" }
+      depart_at: { matches: "^[0-2]?[0-9]:[0-5][0-9]$" }
+      date: { matches: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+      limit: { range: [1, 6] }
+  transit.next_departures:
+    class: read
+    constraints:
+      station: { max_len: 120 }
+      limit: { range: [1, 12] }
+
+  homeassistant.list_entities: { class: read }
+  homeassistant.get_state:
+    class: read
+    constraints:
+      entity_id: { matches: "^(light|sensor|switch|climate|lock)\\.", max_len: 64 }
+  homeassistant.light_turn_on:
+    class: write
+    constraints:
+      entity_id: { matches: "^light\\.(schlafzimmer|wohnzimmer|flur|kueche)$" }
+      brightness_pct: { range: [1, 100] }
+  homeassistant.light_turn_off:
+    class: write
+    constraints:
+      entity_id: { matches: "^light\\.(schlafzimmer|wohnzimmer|flur|kueche)$" }
+  homeassistant.lock_lock:
+    class: write
+    constraints:
+      entity_id: { matches: "^lock\\.(haustuer|garage)$" }
+  # Unlocking is destructive: the agent can propose it, but a human confirms it
+  # out of band (never over voice, never self-confirmed in the chat).
+  homeassistant.lock_unlock:
+    class: destructive
+    constraints:
+      entity_id: { matches: "^lock\\.(haustuer|garage)$" }

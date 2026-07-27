@@ -1,0 +1,40 @@
+# Hub configuration. Validated once at startup; a bad value aborts the process.
+log_level: INFO
+modules_dir: /etc/vahub/modules.d
+state_dir: /var/lib/vahub
+
+web:
+  host: 0.0.0.0            # inside the container; only the mapped port is exposed
+  port: 8080
+  dev_tools_endpoint: true # sandbox only: enables POST /api/dev/call (no gate, no agent)
+  origin_allowlist:
+    - http://localhost:8080
+    - http://127.0.0.1:8080
+    - https://localhost:8443     # via the TLS proxy (sandbox.sh tls)
+    - https://127.0.0.1:8443
+
+budgets:
+  iterations_per_turn: 8
+  tool_result_bytes: 8192
+  tokens_per_turn: 20000
+  tokens_per_day: null
+  wall_clock_text_s: 30.0
+  wall_clock_voice_s: 8.0
+
+llm:
+  # "mock" is a keyword stub that needs no API key (default, so the loop is
+  # testable out of the box). For a real model set provider: openai_compat,
+  # a base_url and model below, and export VAHUB_LLM__API_KEY (never put the
+  # key in this file). Examples:
+  #   OpenAI:     base_url: https://api.openai.com/v1        model: gpt-4o-mini
+  #   OpenRouter: base_url: https://openrouter.ai/api/v1     model: ...
+  #   Ollama:     base_url: http://<host>:11434/v1           model: llama3.1
+  #   Anthropic:  base_url: https://api.anthropic.com/v1     model: claude-...
+  provider: openai_compat
+  base_url: https://openrouter.ai/api/v1
+  model: deepseek/deepseek-v4-flash
+  # The API key is NOT here. It comes from the environment variable
+  # VAHUB_LLM__API_KEY (set it in environment/.env, which is gitignored).
+  temperature: 0.2
+  max_tokens: 1024
+  request_timeout_s: 60.0

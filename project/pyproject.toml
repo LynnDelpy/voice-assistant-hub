@@ -1,0 +1,37 @@
+[project]
+name = "vahub"
+version = "0.1.0"
+description = "Voice-Assistant-Hub core runtime"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "structlog>=24.1",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pyyaml>=6.0",
+    "prometheus-client>=0.20",
+    "httpx>=0.27",
+    "aiosqlite>=0.20",
+    "apscheduler>=3.10,<4",
+    "python-multipart>=0.0.9",
+    "tzdata",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vahub"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
