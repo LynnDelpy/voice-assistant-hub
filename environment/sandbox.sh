@@ -19,11 +19,15 @@ case "$cmd" in
           docker compose run --rm --no-deps --entrypoint /opt/vh/hub/bin/python hub \
             -m pytest -q -p no:cacheprovider /app/project ;;
   build)  docker compose build ;;
+  real-ha) # point the hub at YOUR real Home Assistant (set HA_URL + HA_TOKEN in .env)
+          docker compose -f docker-compose.yml -f docker-compose.realha.yml up --build -d --remove-orphans
+          echo "hub -> http://localhost:8080  (using your real HA; the simulated HA is not running)"
+          echo "reminder: update project/config/policy.yaml so the gate allows YOUR entity ids" ;;
   tls)    # bring the stack up behind the mTLS proxy (M2)
           ./proxy/gen-certs.sh
           docker compose --profile tls up --build -d
           echo "proxy -> https://localhost:8443  (import proxy/certs/client.p12 into your browser first)"
           echo "curl   -> curl --cacert proxy/certs/ca.crt --cert proxy/certs/client.crt --key proxy/certs/client.key https://localhost:8443/health" ;;
   down-tls) docker compose --profile tls down ;;
-  *)      echo "usage: $0 {up|down|reset|logs|ps|shell|test|build|tls|down-tls}" ;;
+  *)      echo "usage: $0 {up|down|reset|logs|ps|shell|test|build|real-ha|tls|down-tls}" ;;
 esac

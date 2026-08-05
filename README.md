@@ -141,15 +141,32 @@ compatible endpoint all work. For a no-key run, set `llm.provider: mock`.
 The sandbox already runs the real Home Assistant software, just with virtual
 devices (template entities defined in
 [environment/homeassistant/config/configuration.yaml](environment/homeassistant/config/configuration.yaml)).
-To point it at your own instance, change `HA_URL` in
-[environment/docker-compose.yml](environment/docker-compose.yml) and supply a
-long-lived token (a systemd credential in prod, not the compose file); the
-sandbox writes the token to a file and the module reads `HA_TOKEN_FILE`, the same
-path prod uses. The module and the gate do not change. The old in-memory mock
-lives on under `environment/mock-ha/` if you ever want a faster, lighter stand-in.
+To point it at your own instance:
 
-Note: real HA is a heavy container, so the first `up` after a `reset` takes
-30 to 60 seconds while HA boots and is onboarded headlessly.
+1. In your Home Assistant, create a long-lived access token (profile, then
+   Security, then Long-lived access tokens, then Create Token).
+2. Add to `environment/.env` (gitignored, never committed):
+   ```
+   HA_URL=http://<your-ha-ip>:8123
+   HA_TOKEN=<the long-lived token>
+   ```
+   Use an IP or real DNS name, not a `.local` mDNS name (it does not resolve
+   inside the container). For a self-signed HTTPS cert add `HA_VERIFY_SSL=false`.
+3. Update [project/config/policy.yaml](project/config/policy.yaml) so the gate
+   allows your entity ids. The sandbox policy only allows the demo's German names
+   (`light.schlafzimmer`, `lock.haustuer`), so control commands against your
+   home are denied until you list your real entities. Reading (`list_entities`,
+   `get_state`) already works, so the agent can ask about your home immediately;
+   only turning things on and off needs the allowlist updated.
+4. Run `./sandbox.sh real-ha`. The simulated HA does not start in this mode; the
+   hub talks to yours. The module code does not change (the module reads the
+   token from `HA_TOKEN` here, the same as prod reads it from a credential file).
+
+The old in-memory mock still lives under `environment/mock-ha/` if you ever want
+a faster, lighter stand-in.
+
+Note: with the sandbox's own HA (`./sandbox.sh up`), the first start after a
+`reset` takes 30 to 60 seconds while HA boots and is onboarded headlessly.
 
 ## What is real and what is mock
 
