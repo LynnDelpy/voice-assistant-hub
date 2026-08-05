@@ -44,15 +44,17 @@ rules:
     class: read
     constraints:
       entity_id: { matches: "^(light|sensor|switch|climate|lock)\\.", max_len: 64 }
+  # Any light entity may be turned on/off (low risk). To restrict to specific
+  # lights, replace "^light\\." with e.g. "^light\\.(wiz_led_strip)$".
   homeassistant.light_turn_on:
     class: write
     constraints:
-      entity_id: { matches: "^light\\.(schlafzimmer|wohnzimmer|flur|kueche)$" }
+      entity_id: { matches: "^light\\.", max_len: 64 }
       brightness_pct: { range: [1, 100] }
   homeassistant.light_turn_off:
     class: write
     constraints:
-      entity_id: { matches: "^light\\.(schlafzimmer|wohnzimmer|flur|kueche)$" }
+      entity_id: { matches: "^light\\.", max_len: 64 }
   homeassistant.lock_lock:
     class: write
     constraints:
