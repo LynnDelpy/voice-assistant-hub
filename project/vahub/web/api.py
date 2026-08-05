@@ -44,7 +44,7 @@ def _reject_bad_origin(request: Request, allow: list[str]) -> None:
     browser. Reject a present-but-disallowed Origin (a non-browser client sends
     none and is allowed, matching the WebSocket rule)."""
     origin = request.headers.get("origin")
-    if origin is not None and origin not in allow:
+    if origin is not None and "*" not in allow and origin not in allow:
         raise HTTPException(status_code=403, detail="bad origin")
 
 
@@ -178,7 +178,7 @@ def create_app(rt: "Runtime") -> FastAPI:
         allow = rt.config.web.origin_allowlist
         # Browsers always send Origin. A missing Origin here means a non-browser
         # client (curl, a script); we allow it since the sandbox is loopback-only.
-        if origin is not None and origin not in allow:
+        if origin is not None and "*" not in allow and origin not in allow:
             await ws.close(code=1008)
             return
         await ws.accept()

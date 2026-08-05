@@ -7,11 +7,12 @@ web:
   host: 0.0.0.0            # inside the container; only the mapped port is exposed
   port: 8080
   dev_tools_endpoint: true # sandbox only: enables POST /api/dev/call (no gate, no agent)
+  # "*" allows ANY origin (disables the cross-origin/CSRF check). Convenient, but
+  # it means any web page your browser visits can drive the hub if it can reach
+  # it. Prefer listing exact origins (http://host:port) unless you know you want
+  # this. Non-browser clients (curl) send no Origin and are always allowed.
   origin_allowlist:
-    - http://localhost:8080
-    - http://127.0.0.1:8080
-    - https://localhost:8443     # via the TLS proxy (sandbox.sh tls)
-    - https://127.0.0.1:8443
+    - "*"
 
 budgets:
   iterations_per_turn: 8
