@@ -10,3 +10,4 @@ __pycache__/
 environment/proxy/certs/
 environment/.env
 .env
+environment/.sandbox-mode

@@ -37,6 +37,10 @@ Every milestone from the build order is implemented and working in the sandbox.
   by changing one URL and token.
 * **Transit.** A module for Swiss public transport (departures and connections)
   over the free transport.opendata.ch API, no key. Ask it when your tram leaves.
+* **Notifications.** A module that sends push notifications on command, through
+  a self-hosted ntfy server that runs in the sandbox (no account, no cloud). Ask
+  the assistant to notify you and it arrives on your phone. A pushover backend
+  is also supported. See the notifications section below.
 * **Scheduler (M6).** Deterministic routines (a morning routine) that run through
   the gate as their own principal, without the agent and without an LLM.
 * **Voice (M7).** A microphone in the web console. By default the browser handles
@@ -53,7 +57,26 @@ Requires Docker with the Compose plugin.
 
 ```bash
 cd environment
-./sandbox.sh up          # build and start; hub on http://localhost:8080
+./sandbox.sh up            # simulated Home Assistant (self-contained demo)
+./sandbox.sh up --real-ha  # your own Home Assistant (see the section below)
+./sandbox.sh up --tls      # add the mTLS proxy on https://localhost:8443
+```
+
+`up` builds, starts, waits for the hub, and then prints the state of every
+module, so a module that failed to start is visible immediately instead of
+silently sitting there. The chosen mode is remembered in `.sandbox-mode`, so
+`down`, `logs`, `reset`, `status` and `test` all act on the same set of
+services, and containers left over from another mode are removed.
+
+Useful commands:
+
+```bash
+./sandbox.sh status        # containers plus per-module state
+./sandbox.sh logs          # follow logs (add a service name to narrow it)
+./sandbox.sh modlog notify # stderr of a single hub module
+./sandbox.sh push "hello"  # send a test push through the notify module
+./sandbox.sh reset         # wipe volumes, restart in the same mode
+./sandbox.sh down          # stop
 ```
 
 Open http://localhost:8080. You get a console with a chat box, a microphone
@@ -64,6 +87,8 @@ Type or say things like:
 * "what time is it in Tokyo?"
 * "turn on the bedroom light"
 * "what's the temperature?"
+* "when does my tram leave if I want to be at Basel SBB at 8:15?"
+* "send me a push that the laundry is done"
 * "unlock the front door" (this asks you to confirm, see below)
 
 The microphone uses your browser's speech recognition (Chrome or Edge), and the
@@ -162,11 +187,36 @@ To point it at your own instance:
    hub talks to yours. The module code does not change (the module reads the
    token from `HA_TOKEN` here, the same as prod reads it from a credential file).
 
-The old in-memory mock still lives under `environment/mock-ha/` if you ever want
-a faster, lighter stand-in.
-
 Note: with the sandbox's own HA (`./sandbox.sh up`), the first start after a
 `reset` takes 30 to 60 seconds while HA boots and is onboarded headlessly.
+
+## Notifications (push to your phone)
+
+The `notify` module sends push notifications on command. The default backend is
+[ntfy](https://ntfy.sh), self-hosted as part of the sandbox, so there is no
+account and no third-party cloud involved.
+
+Check the chain works:
+
+```bash
+./sandbox.sh push "hello from the hub"
+```
+
+To receive them on your phone: install the ntfy app, point it at this host
+(`http://<this-host-ip>:2586`), and subscribe to the topic `vahub-alerts`. Two
+settings matter for that:
+
+* `NTFY_BASE_URL` in `environment/.env` should be the address your phone can
+  reach (`http://192.168.x.x:2586`), not `localhost`, or the links ntfy
+  generates will point at the wrong place.
+* The ntfy port is published on all interfaces on purpose, because the phone
+  connects to it directly. Anyone who knows the topic name can read and post to
+  it. Pick an unguessable topic, or enable ntfy auth, if that matters to you.
+
+To change the topic, set `NTFY_TOPIC` for the hub in
+[environment/docker-compose.yml](environment/docker-compose.yml). For pushover
+instead of ntfy, set `NOTIFY_BACKEND=pushover` plus `PUSHOVER_TOKEN` and
+`PUSHOVER_USER` (or their `_FILE` variants).
 
 ## What is real and what is mock
 

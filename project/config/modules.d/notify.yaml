@@ -2,7 +2,7 @@ name: notify
 version: 0.1.0
 
 transport: stdio
-command: ["/opt/vh/mod-notify/bin/python", "-m", "vahub_mod_notify"]
+command: ["/opt/vh/mod/notify/bin/python", "-m", "vahub_mod_notify"]
 
 config:
   required: []

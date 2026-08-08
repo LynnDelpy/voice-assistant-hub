@@ -2,7 +2,7 @@ name: homeassistant
 version: 0.1.0
 
 transport: stdio
-command: ["/opt/vh/mod-ha/bin/python", "-m", "vahub_mod_homeassistant"]
+command: ["/opt/vh/mod/homeassistant/bin/python", "-m", "vahub_mod_homeassistant"]
 
 config:
   required: [HA_URL]

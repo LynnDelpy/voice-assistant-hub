@@ -2,7 +2,7 @@ name: time
 version: 0.1.0
 
 transport: stdio
-command: ["/opt/vh/mod-time/bin/python", "-m", "vahub_mod_time"]
+command: ["/opt/vh/mod/time/bin/python", "-m", "vahub_mod_time"]
 
 config:
   required: []

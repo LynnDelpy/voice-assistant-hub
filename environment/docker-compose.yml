@@ -6,9 +6,12 @@ services:
     image: vahub:dev
     container_name: vahub
     ports:
-      # Loopback only. Do NOT change to "8080:8080" (that binds 0.0.0.0 and
-      # exposes the ungated dev tool-call endpoint to the whole LAN).
-      - "8080:8080"
+      # Default binds 0.0.0.0, so the hub is reachable from the LAN. The hub has
+      # NO auth of its own, and /api/dev/call executes tools directly, so anyone
+      # who can reach this port can drive your home. Lock it down with either:
+      #   HUB_BIND=127.0.0.1   (loopback only; use the mTLS proxy for remote)
+      # or a firewall rule. Note docker's iptables rules bypass most host firewalls.
+      - "${HUB_BIND:-0.0.0.0}:8080:8080"
     volumes:
       # Live code, read-only from inside the container.
       - ../project:/app/project:ro
@@ -111,7 +114,11 @@ services:
       - ntfy-cache:/var/cache/ntfy
     environment:
       TZ: Europe/Zurich
-      NTFY_BASE_URL: http://localhost:2586
+      # What ntfy advertises as its own address (used in links it generates).
+      # "localhost" only works on this machine: set NTFY_BASE_URL in
+      # environment/.env to this host's LAN IP or domain so your phone can
+      # subscribe, e.g. NTFY_BASE_URL=http://192.168.196.3:2586
+      NTFY_BASE_URL: "${NTFY_BASE_URL:-http://localhost:2586}"
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
       # Anyone who knows the topic name can read/publish to it by default.
       # Fine for a private/obscure topic name; tighten with NTFY_AUTH_DEFAULT_ACCESS: deny-all

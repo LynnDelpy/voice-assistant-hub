@@ -2,7 +2,7 @@ name: transit
 version: 0.1.0
 
 transport: stdio
-command: ["/opt/vh/mod-transit/bin/python", "-m", "vahub_mod_transit"]
+command: ["/opt/vh/mod/transit/bin/python", "-m", "vahub_mod_transit"]
 
 config:
   required: []
