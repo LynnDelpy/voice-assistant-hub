@@ -28,11 +28,6 @@ services:
       HA_TOKEN: ""
       HA_TOKEN_FILE: /tokens/ha_token
       HA_VERIFY_SSL: "false"
-      # Self-hosted ntfy (see the ntfy service below). NTFY_URL uses the
-      # internal container name/port, not the host-published one.
-      NOTIFY_BACKEND: ntfy
-      NTFY_URL: http://ntfy:80
-      NTFY_TOPIC: vahub-alerts
       # LLM API key, read from environment/.env (gitignored). Empty if unset.
       VAHUB_LLM__API_KEY: "${VAHUB_LLM__API_KEY:-}"
     depends_on:
@@ -40,8 +35,6 @@ services:
         condition: service_healthy
       ha-init:
         condition: service_completed_successfully
-      ntfy:
-        condition: service_healthy
     # The hub manages its own module subprocesses; a hub crash should be visible,
     # not silently restarted.
     restart: "no"
@@ -92,39 +85,6 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # Self-hosted push-notification server (ntfy). Same idea as the homeassistant
-  # service: a real backend running in the sandbox instead of talking to a
-  # third-party cloud. Published to the host (not loopback-only, unlike the
-  # hub) because your phone needs to reach it directly.
-  ntfy:
-    image: binwiederhier/ntfy
-    container_name: vahub-ntfy
-    command: serve
-    ports:
-      # 0.0.0.0, on purpose: the ntfy app on your phone connects to this port.
-      # For access from outside your LAN (WAN), forward this port on your
-      # router to this host, or put it behind the existing mTLS proxy /
-      # Tailscale instead of opening it directly.
-      - "2586:80"
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      TZ: Europe/Zurich
-      NTFY_BASE_URL: http://localhost:2586
-      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
-      # Anyone who knows the topic name can read/publish to it by default.
-      # Fine for a private/obscure topic name; tighten with NTFY_AUTH_DEFAULT_ACCESS: deny-all
-      # plus `docker compose exec ntfy ntfy user add ...` if you want real auth.
-      NTFY_AUTH_DEFAULT_ACCESS: "read-write"
-    restart: "no"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--tries=1", "-O", "-", "http://127.0.0.1:80/v1/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 5s
-
   # M2: TLS + mTLS auth proxy. Opt-in via `--profile tls` (see `sandbox.sh tls`).
   # The hub has no auth code; this is the only authenticated way in. Requires
   # certs from ./proxy/gen-certs.sh. In prod the hub would not publish 8080 at
@@ -146,5 +106,3 @@ volumes:
   vahub-state:
   ha-config:
   ha-tokens:
-  ntfy-data:
-  ntfy-cache:

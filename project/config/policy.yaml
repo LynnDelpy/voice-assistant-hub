@@ -65,3 +65,11 @@ rules:
     class: destructive
     constraints:
       entity_id: { matches: "^lock\\.(haustuer|garage)$" }
+
+  notify.send_push:
+    class: write
+    constraints:
+      title: { max_len: 120 }
+      message: { max_len: 1000 }
+      priority: { matches: "^(min|low|default|high|urgent)$" }
+      tags: { max_len: 120 }    

@@ -1,0 +1,32 @@
+name: notify
+version: 0.1.0
+
+transport: stdio
+command: ["/opt/vh/mod-notify/bin/python", "-m", "vahub_mod_notify"]
+
+config:
+  required: []
+  optional: [NOTIFY_BACKEND, NTFY_URL, NTFY_TOPIC,
+             PUSHOVER_TOKEN, PUSHOVER_TOKEN_FILE, PUSHOVER_USER, PUSHOVER_USER_FILE]
+
+runtime:
+  uid: null                                    # prod (LXC) sets a dedicated UID
+  cwd: /var/lib/vahub/modules/notify
+  pythonpath: /app/project/modules/notify        # dev only: live code from the mount
+
+health:
+  interval_s: 60
+  timeout_s: 8
+
+restart:
+  max_retries: 5
+  backoff_base_s: 2
+  reset_after_s: 600
+  startup_timeout_s: 20
+
+# Tokens must never reach the audit log.
+audit:
+  redact: [token, PUSHOVER_TOKEN, PUSHOVER_USER, api_key, password]
+
+tools:
+  send_push: { class: write }
