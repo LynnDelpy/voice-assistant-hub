@@ -21,15 +21,17 @@ vahub/
 ├── web/
 │   ├── api.py         REST, WebSocket, and the status page
 │   └── static/        the status page
-├── agent/ scheduler/ stt/ tts/ storage/   placeholders for later milestones
-config/
-├── config.yaml        hub config
-└── modules.d/
-    └── time.yaml       the time module's manifest
-modules/
-└── time/               the time module (its own package and venv)
+├── agent/          the LLM loop, the policy gate, LLM adapters
+├── scheduler/      cron routines
+├── stt/ tts/       speech adapters
+└── storage/        SQLite (audit log, conversations, budgets)
+modules/            one MCP server per module, each with its own venv
+├── time/  homeassistant/  transit/  notify/
 tests/
 ```
+
+Configuration is not in here: it is the single `../.env` (every knob) plus
+`../config/` (policy, schedules, module manifests).
 
 ## The design in one line
 
@@ -37,8 +39,7 @@ tests/
 intent -> LLM -> tool call -> policy -> MCP server -> actuator
 ```
 
-Two ideas from the plan are already visible in the code, even though the agent
-and the gate are not built yet.
+Two ideas from the plan are worth calling out in the code.
 
 * **The module contract is a transport, not a function call.** The hub never
   imports a module. The supervisor spawns it as a subprocess and talks MCP over
@@ -54,7 +55,7 @@ and the gate are not built yet.
 Inside the sandbox:
 
 ```bash
-../environment/sandbox.sh test
+../vahub test
 ```
 
 Or locally, with a Python 3.12 virtualenv:
@@ -71,19 +72,23 @@ SDK installed.
 
 ## The dev call endpoint
 
-`POST /api/dev/call` calls a tool directly. It is enabled by
-`web.dev_tools_endpoint` in `config.yaml` and is on in the sandbox. It exists to
-validate the module contract in M1. It deliberately bypasses the policy gate
-(M3) and the agent (M4). Once those exist and are the only callers, this endpoint
-should be removed.
+`POST /api/dev/call` calls a tool directly, without the agent. It is enabled by
+`VAHUB_WEB__DEV_TOOLS_ENDPOINT` in `../.env` and is on in the sandbox. It is
+useful for testing a module in isolation (`../vahub push` uses it), but it is an
+unauthenticated remote-control endpoint, so turn it off if the port is reachable
+by anyone else. It still goes through the policy gate, as principal `dev`.
 
 ## Adding a module
 
 1. Create `modules/<name>/` with its own `pyproject.toml` and an MCP server that
    exposes a reserved `__health` tool.
-2. Add a manifest at `config/modules.d/<name>.yaml` pointing `command` at the
-   module's venv interpreter.
-3. Give it its own venv in the `Dockerfile`.
+2. Add a manifest at `../config/modules.d/<name>.yaml` whose `command` points at
+   `/opt/vh/mod/<name>/bin/python`, where `<name>` is the module directory name.
+3. Add its tools to `../config/policy.yaml`, or the gate denies them by default.
+
+The image builds one venv per directory under `modules/`, so no Dockerfile
+change is needed. `tests/test_manifests.py` checks that the manifest, the module
+directory and the policy agree.
 
 The supervisor discovers the manifest on the next start. There is no registration
 step in code, and a module cannot grant itself permissions: the tool classes in

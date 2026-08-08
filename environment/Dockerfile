@@ -45,6 +45,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
  && chown -R vahub:vahub /var/lib/vahub /etc/vahub /opt/vh
 
 USER vahub
-ENV VAHUB_CONFIG=/etc/vahub/config.yaml
+# Configuration comes from the environment (the single .env at the repo root),
+# not from a YAML file. The structured parts (policy, schedules, manifests) are
+# mounted at /etc/vahub by the compose file.
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

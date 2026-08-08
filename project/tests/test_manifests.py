@@ -14,9 +14,22 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-MODULES_DIR = ROOT / "modules"
-MANIFEST_DIR = ROOT / "config" / "modules.d"
+PROJECT = Path(__file__).resolve().parents[1]
+MODULES_DIR = PROJECT / "modules"
+
+
+def _config_dir() -> Path:
+    """The structured config lives at <repo>/config, which the sandbox mounts
+    into the container at /etc/vahub. Support both so the suite runs in the
+    container and in a plain checkout."""
+    for candidate in (Path("/etc/vahub"), PROJECT.parent / "config"):
+        if (candidate / "modules.d").is_dir():
+            return candidate
+    raise AssertionError("could not locate the config directory")
+
+
+CONFIG_DIR = _config_dir()
+MANIFEST_DIR = CONFIG_DIR / "modules.d"
 
 VENV_RE = re.compile(r"^/opt/vh/mod/([^/]+)/bin/python$")
 
@@ -57,7 +70,7 @@ def test_declared_tools_are_allowed_by_the_policy():
     """A tool a module advertises but the gate has no rule for is dead weight:
     default-deny means the agent can never call it. Catches a module added
     without its policy entry."""
-    policy = yaml.safe_load((ROOT / "config" / "policy.yaml").read_text())
+    policy = yaml.safe_load((CONFIG_DIR / "policy.yaml").read_text())
     rules = policy.get("rules", {})
     for path, man in manifests():
         for tool in (man.get("tools") or {}):

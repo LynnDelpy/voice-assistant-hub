@@ -7,9 +7,20 @@ sandbox you can kill and restart clean.
 
 ```
 voice-assistant-hub/
-├── environment/   the disposable sandbox (Docker Compose, real HA, TLS proxy)
-└── project/       the hub code (vahub), bind-mounted into the sandbox
+├── .env           ALL configuration: secrets, URLs, ports, model, budgets
+├── vahub          the only command you run: ./vahub up, ./vahub status, ...
+├── config/        structured config that is not key=value
+│   ├── policy.yaml          which tools and arguments are allowed
+│   ├── schedules.yaml       cron routines
+│   ├── modules.d/           one manifest per module
+│   └── homeassistant.yaml   the simulated home's devices (demo mode)
+├── project/       the hub code (vahub), bind-mounted into the sandbox
+└── environment/   the disposable sandbox (Docker Compose, real HA, TLS proxy)
 ```
+
+Two places to configure anything: `.env` for every knob, `config/` for the few
+things that genuinely are not key-value pairs. You should never need to edit the
+compose files.
 
 You edit code in `project/`. The sandbox runs it live (the source is bind-mounted,
 so a restart picks up changes, no rebuild unless dependencies change).
@@ -56,27 +67,27 @@ Every milestone from the build order is implemented and working in the sandbox.
 Requires Docker with the Compose plugin.
 
 ```bash
-cd environment
-./sandbox.sh up            # simulated Home Assistant (self-contained demo)
-./sandbox.sh up --real-ha  # your own Home Assistant (see the section below)
-./sandbox.sh up --tls      # add the mTLS proxy on https://localhost:8443
+cp .env.example .env       # then put your API key in it
+./vahub up                 # simulated Home Assistant (self-contained demo)
+./vahub up --real-ha       # your own Home Assistant (see the section below)
+./vahub up --tls           # add the mTLS proxy on https://localhost:8443
 ```
 
 `up` builds, starts, waits for the hub, and then prints the state of every
 module, so a module that failed to start is visible immediately instead of
-silently sitting there. The chosen mode is remembered in `.sandbox-mode`, so
-`down`, `logs`, `reset`, `status` and `test` all act on the same set of
-services, and containers left over from another mode are removed.
+silently sitting there. The chosen mode is remembered, so `down`, `logs`,
+`reset`, `status` and `test` all act on the same set of services, and containers
+left over from another mode are removed.
 
 Useful commands:
 
 ```bash
-./sandbox.sh status        # containers plus per-module state
-./sandbox.sh logs          # follow logs (add a service name to narrow it)
-./sandbox.sh modlog notify # stderr of a single hub module
-./sandbox.sh push "hello"  # send a test push through the notify module
-./sandbox.sh reset         # wipe volumes, restart in the same mode
-./sandbox.sh down          # stop
+./vahub status        # containers plus per-module state
+./vahub logs          # follow logs (add a service name to narrow it)
+./vahub modlog notify # stderr of a single hub module
+./vahub push "hello"  # send a test push through the notify module
+./vahub reset         # wipe volumes, restart in the same mode
+./vahub down          # stop
 ```
 
 Open http://localhost:8080. You get a console with a chat box, a microphone
@@ -94,10 +105,36 @@ Type or say things like:
 The microphone uses your browser's speech recognition (Chrome or Edge), and the
 assistant speaks its reply back. Typing works in every browser.
 
+## Configuration
+
+Everything tunable is in one file: **`.env`** at the repo root. Copy
+[.env.example](.env.example), which documents every setting, and edit it. That
+covers the API key, the model, your Home Assistant, notifications, ports,
+budgets, timezone, and the security toggles. Changing a value means editing that
+one line and running `./vahub up` again.
+
+Any `VAHUB_*` variable you put there reaches the hub, so anything in the config
+model can be set from `.env` even if `.env.example` does not list it. Nesting
+uses a double underscore: `VAHUB_WEB__PORT` sets `web.port`.
+
+The only configuration that is not in `.env` is the part that genuinely is not
+key-value, and it all sits in `config/`:
+
+| file | what it is |
+|---|---|
+| `config/policy.yaml` | which tools and which argument values are allowed |
+| `config/schedules.yaml` | cron routines and their steps |
+| `config/modules.d/*.yaml` | one manifest per module |
+| `config/homeassistant.yaml` | the simulated home's devices (demo mode only) |
+
+Nested rules with regex constraints and multi-step routines do not survive being
+flattened into environment variables, so they stay as YAML rather than being
+forced into `.env` for the sake of a single file.
+
 ## The policy gate and confirmations
 
 The gate is the security boundary, in code, not in the prompt. It is defined in
-[project/config/policy.yaml](project/config/policy.yaml) and checks arguments,
+[config/policy.yaml](config/policy.yaml) and checks arguments,
 not just tool names. For example `light_turn_on` is allowed only for the four
 named lights, and `brightness_pct` only in the range 1 to 100. A Home Assistant
 token is admin or nothing, so this file is the real limit on what the assistant
@@ -117,7 +154,7 @@ curl -s localhost:8080/api/audit | python3 -m json.tool | head -40
 
 ## The scheduler
 
-Routines are in [project/config/schedules.yaml](project/config/schedules.yaml).
+Routines are in [config/schedules.yaml](config/schedules.yaml).
 The morning routine turns on the bedroom light and speaks the time on weekday
 mornings, through the gate as `principal=scheduler` (which may act without
 confirmation but is denied locks). Trigger it now without waiting for the cron
@@ -130,8 +167,7 @@ curl -s -X POST localhost:8080/api/schedules/morgenroutine/run | python3 -m json
 ## TLS and client-certificate auth (optional)
 
 ```bash
-cd environment
-./sandbox.sh tls         # generates dev certs and starts the proxy
+./vahub up --tls    # generates dev certs and starts the proxy
 ```
 
 Then import `environment/proxy/certs/client.p12` (empty password) into your
@@ -145,7 +181,7 @@ PKI.
 ## Clean slate
 
 ```bash
-./sandbox.sh reset       # down -v (wipe the state volume) then up
+./vahub reset       # down -v (wipe the state volume) then up
 ```
 
 State (the SQLite database, conversations, the audit log, pending confirmations)
@@ -154,10 +190,10 @@ wiped, so a reset is fast.
 
 ## The language model
 
-The agent talks to an OpenAI-compatible endpoint, set in the `llm` block of
-[project/config/config.yaml](project/config/config.yaml) (`provider`, `base_url`,
-`model`). The API key is never in that file: it is read from
-`environment/.env` (gitignored) as `VAHUB_LLM__API_KEY`. The adapter speaks the
+The agent talks to an OpenAI-compatible endpoint, configured entirely in `.env`
+(`VAHUB_LLM__PROVIDER`, `VAHUB_LLM__BASE_URL`, `VAHUB_LLM__MODEL`, and
+`VAHUB_LLM__API_KEY`). `.env` is gitignored, so the key never gets committed.
+The adapter speaks the
 OpenAI format, so OpenAI, OpenRouter, Groq, Ollama, llama.cpp, and Anthropic's
 compatible endpoint all work. For a no-key run, set `llm.provider: mock`.
 
@@ -165,29 +201,29 @@ compatible endpoint all work. For a no-key run, set `llm.provider: mock`.
 
 The sandbox already runs the real Home Assistant software, just with virtual
 devices (template entities defined in
-[environment/homeassistant/config/configuration.yaml](environment/homeassistant/config/configuration.yaml)).
+[config/homeassistant.yaml](config/homeassistant.yaml)).
 To point it at your own instance:
 
 1. In your Home Assistant, create a long-lived access token (profile, then
    Security, then Long-lived access tokens, then Create Token).
-2. Add to `environment/.env` (gitignored, never committed):
+2. Add to `.env` (gitignored, never committed):
    ```
    HA_URL=http://<your-ha-ip>:8123
    HA_TOKEN=<the long-lived token>
    ```
    Use an IP or real DNS name, not a `.local` mDNS name (it does not resolve
    inside the container). For a self-signed HTTPS cert add `HA_VERIFY_SSL=false`.
-3. Update [project/config/policy.yaml](project/config/policy.yaml) so the gate
+3. Update [config/policy.yaml](config/policy.yaml) so the gate
    allows your entity ids. The sandbox policy only allows the demo's German names
    (`light.schlafzimmer`, `lock.haustuer`), so control commands against your
    home are denied until you list your real entities. Reading (`list_entities`,
    `get_state`) already works, so the agent can ask about your home immediately;
    only turning things on and off needs the allowlist updated.
-4. Run `./sandbox.sh real-ha`. The simulated HA does not start in this mode; the
+4. Run `./vahub up --real-ha`. The simulated HA does not start in this mode; the
    hub talks to yours. The module code does not change (the module reads the
    token from `HA_TOKEN` here, the same as prod reads it from a credential file).
 
-Note: with the sandbox's own HA (`./sandbox.sh up`), the first start after a
+Note: with the sandbox's own HA (`./vahub up`), the first start after a
 `reset` takes 30 to 60 seconds while HA boots and is onboarded headlessly.
 
 ## Notifications (push to your phone)
@@ -199,14 +235,14 @@ account and no third-party cloud involved.
 Check the chain works:
 
 ```bash
-./sandbox.sh push "hello from the hub"
+./vahub push "hello from the hub"
 ```
 
 To receive them on your phone: install the ntfy app, point it at this host
 (`http://<this-host-ip>:2586`), and subscribe to the topic `vahub-alerts`. Two
 settings matter for that:
 
-* `NTFY_BASE_URL` in `environment/.env` should be the address your phone can
+* `NTFY_BASE_URL` in `.env` should be the address your phone can
   reach (`http://192.168.x.x:2586`), not `localhost`, or the links ntfy
   generates will point at the wrong place.
 * The ntfy port is published on all interfaces on purpose, because the phone
@@ -230,7 +266,7 @@ Web Speech, unless you configure server STT/TTS).
 ## Testing
 
 ```bash
-./sandbox.sh test        # runs the suite inside the sandbox
+./vahub test        # runs the suite inside the sandbox
 ```
 
 ## A note on production

@@ -1,33 +1,30 @@
-# Overlay: point the hub at YOUR real Home Assistant instead of the sandbox's
-# simulated one. The simulated HA (homeassistant + ha-init) does not start here.
+# Overlay: talk to YOUR Home Assistant instead of the simulated one.
+# Enable with `./sandbox.sh up --real-ha`.
 #
-# 1. In your Home Assistant: profile -> Security -> Long-lived access tokens ->
-#    Create Token. Copy it.
-# 2. Put these in environment/.env (gitignored, never committed):
-#      HA_URL=http://<your-ha-ip>:8123
-#      HA_TOKEN=<the long-lived token>
-#    Use an IP or a real DNS name, not a .local mDNS name (it will not resolve
-#    inside the container). For self-signed HTTPS add HA_VERIFY_SSL=false.
-# 3. Update project/config/policy.yaml so the gate allows your entity ids
-#    (the sandbox policy only allows the demo's German names).
-# 4. Run it:  ./sandbox.sh real-ha
-#    (or: docker compose -f docker-compose.yml -f docker-compose.realha.yml up -d)
-
+# Set HA_URL and HA_TOKEN in ../.env (create the token in Home Assistant under
+# profile -> Security -> Long-lived access tokens). Remember that the policy
+# gate in ../config/policy.yaml lists which entity ids may be controlled, so
+# add yours there or control commands will be denied.
 services:
   hub:
-    # Replace (not merge) the dependency list: the simulated HA is not started in
-    # this mode, so drop the wait on it, but KEEP waiting for ntfy, which is still
-    # part of the stack. `!reset []` here would silently drop ntfy too and let the
-    # hub race ahead of the notification backend.
+    # Replace (not merge) the dependency list: the simulated HA is not started
+    # in this mode, so drop the wait on it, but KEEP waiting for ntfy, which is
+    # still part of the stack. `!reset []` here would silently drop ntfy too and
+    # let the hub race ahead of the notification backend.
     depends_on: !override
       ntfy:
         condition: service_healthy
     environment:
-      HA_URL: "${HA_URL:?set HA_URL in environment/.env, e.g. http://192.168.1.50:8123}"
-      HA_TOKEN: "${HA_TOKEN:?create a long-lived token in your HA and set HA_TOKEN in environment/.env}"
+      # Undo the demo-mode overrides from the base file so the values from
+      # ../.env apply. The token is passed directly rather than through the
+      # ha-init token file, which only exists in demo mode.
+      HA_URL: "${HA_URL:?set HA_URL in .env, e.g. https://ha.example.com or http://192.168.1.50:8123}"
+      HA_TOKEN: "${HA_TOKEN:?create a long-lived token in Home Assistant and set HA_TOKEN in .env}"
       HA_TOKEN_FILE: ""
       HA_VERIFY_SSL: "${HA_VERIFY_SSL:-true}"
+      NTFY_URL: "${NTFY_URL:-http://ntfy:80}"
 
+  # The simulated home is not part of this mode.
   homeassistant:
     profiles: ["disabled"]
 

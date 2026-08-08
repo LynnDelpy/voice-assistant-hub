@@ -10,7 +10,20 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MODE_FILE=".sandbox-mode"
-HUB_URL="http://localhost:8080"
+ENV_FILE="../.env"
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "no .env found at the repo root."
+  echo "create it once with:  cp .env.example .env   then edit it."
+  exit 1
+fi
+
+# Read a value out of the .env so the script reports the right URLs.
+env_get() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- ; }
+HUB_PORT="$(env_get HUB_PORT)"; HUB_PORT="${HUB_PORT:-8080}"
+NTFY_PORT="$(env_get NTFY_PORT)"; NTFY_PORT="${NTFY_PORT:-2586}"
+NTFY_TOPIC="$(env_get NTFY_TOPIC)"; NTFY_TOPIC="${NTFY_TOPIC:-vahub-alerts}"
+HUB_URL="http://localhost:${HUB_PORT}"
 
 read_mode()  { [ -f "$MODE_FILE" ] && cat "$MODE_FILE" || echo "demo"; }
 write_mode() { printf '%s\n' "$1" > "$MODE_FILE"; }
@@ -18,7 +31,8 @@ write_mode() { printf '%s\n' "$1" > "$MODE_FILE"; }
 # Populate COMPOSE=(docker compose ...) for a mode string like "real-ha+tls".
 build_compose() {
   local mode="$1"
-  COMPOSE=(docker compose -f docker-compose.yml)
+  # --env-file: all configuration lives in the single ../.env at the repo root.
+  COMPOSE=(docker compose --env-file ../.env -f docker-compose.yml)
   case "$mode" in *real-ha*) COMPOSE+=(-f docker-compose.realha.yml) ;; esac
   case "$mode" in *tls*)     COMPOSE+=(--profile tls) ;; esac
 }
@@ -109,8 +123,8 @@ report() {
   echo
   echo "mode: $mode"
   echo "hub:  $HUB_URL"
-  case "$mode" in *tls*) echo "tls:  https://localhost:8443 (needs proxy/certs/client.p12 in your browser)" ;; esac
-  echo "ntfy: http://localhost:2586  (topic: ${NTFY_TOPIC:-vahub-alerts})"
+  case "$mode" in *tls*) echo "tls:  https://localhost:$(env_get PROXY_PORT | grep -E '^[0-9]+$' || echo 8443) (needs proxy/certs/client.p12 in your browser)" ;; esac
+  echo "ntfy: http://localhost:${NTFY_PORT}  (topic: ${NTFY_TOPIC})"
   echo
   echo "modules:"
   wait_modules

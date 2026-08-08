@@ -1,46 +1,63 @@
 # environment
 
-The disposable sandbox. Everything here is a throwaway harness around the code in
-`../project`. Nothing here is part of the hub itself.
+The disposable sandbox: a throwaway harness around the hub in `../project`.
+Nothing in here is part of the hub itself.
+
+You normally do not need to read or edit anything in this directory. All
+configuration lives in the single `../.env` (see `../.env.example`), and the
+commands are driven from the repo root with `../vahub`.
 
 ## Files
 
-* `docker-compose.yml` defines one service, `hub`. It bind-mounts `../project`
-  (live code, read-only) and `../project/config` (config and manifests), and
-  mounts a named volume `vahub-state` at `/var/lib/vahub` for disposable state.
-* `Dockerfile` builds a Python 3.12 image. It creates two virtual environments
-  with `uv`: one for the hub, one for the `time` module. Each module having its
-  own venv is the contract from the plan (separate dependency graphs, separate
-  processes).
-* `entrypoint.sh` prepares the module data directory and starts the hub.
-* `sandbox.sh` is a thin wrapper over `docker compose` with the commands you use
-  day to day.
+* `docker-compose.yml` the stack: `hub`, a real `homeassistant` with virtual
+  devices, `ha-init` (one-shot headless onboarding), `ntfy` (push
+  notifications), and an opt-in `proxy` for TLS with client certificates.
+  Every value in it comes from `../.env`.
+* `docker-compose.realha.yml` overlay for `--real-ha`: skips the simulated Home
+  Assistant and points the hub at your own instance.
+* `Dockerfile` builds a Python 3.12 image with one virtualenv for the hub and
+  one per module directory, so each module keeps its own dependency graph.
+* `sandbox.sh` the command wrapper (`../vahub` forwards to it).
+* `homeassistant/init/onboard.py` creates the long-lived token for the
+  simulated Home Assistant so no manual setup is needed.
+* `proxy/` Caddyfile and a dev certificate generator for the mTLS mode.
 
 ## Commands
 
+Run these from the repo root as `./vahub <command>`:
+
 ```bash
-./sandbox.sh up      # build and start (detached)
-./sandbox.sh reset   # down -v (wipe state) then up: a clean slate
-./sandbox.sh down    # stop and remove containers
-./sandbox.sh logs    # follow logs
-./sandbox.sh ps      # container status
-./sandbox.sh shell   # a shell inside the running container
-./sandbox.sh test    # run pytest inside the sandbox
-./sandbox.sh build   # rebuild the image only
+./vahub up [--real-ha] [--tls]   build, start, wait, report module states
+./vahub status                   containers plus per-module state
+./vahub logs [service]           follow logs
+./vahub modlog notify            stderr of a single hub module
+./vahub push "hello"             send a test notification end to end
+./vahub reset                    wipe volumes and restart in the same mode
+./vahub down                     stop
+./vahub test                     run the suite inside the sandbox
 ```
+
+The active mode is stored in `.sandbox-mode` so every later command acts on the
+services that were actually started, and containers left over from a previous
+mode are removed on the next `up`.
 
 ## How live editing works
 
-The image copies `project/` at build time only so the venvs can be created. At
-run time the compose file bind-mounts the host `project/` over `/app/project`, so
-the code the container runs is your working copy. `PYTHONPATH` points imports at
-the mount, and the module manifest sets its own `pythonpath` to the mounted
-module source. Edit a file, restart the hub (`./sandbox.sh reset` or a plain
-`docker compose restart hub`), and the change is live. A rebuild is only needed
-when dependencies change.
+The image copies `project/` at build time so the virtualenvs can be created. At
+run time the compose file bind-mounts the host `project/` over `/app/project`,
+so the code that runs is your working copy, and `../config` over `/etc/vahub`.
+Edit a file and restart the hub (`./vahub up`, or `docker compose restart hub`)
+and the change is live. A rebuild is only needed when dependencies change or a
+module is added.
 
 ## Ports
 
-Only `8080` is published to the host. Inside the container the hub binds
-`0.0.0.0`, which is fine because nothing else shares the container's network. In
-production the hub binds the internal bridge and sits behind the proxy.
+* `HUB_PORT` (8080) the hub and its web console.
+* `NTFY_PORT` (2586) the notification server, published on all interfaces
+  because your phone connects to it directly.
+* `PROXY_PORT` (8443) the mTLS proxy, only with `--tls`.
+
+`HUB_BIND` controls which host interface the hub is published on. The hub has no
+authentication of its own, so on an untrusted network set it to `127.0.0.1` and
+reach it through the proxy instead. In production the hub binds the internal
+bridge and only the proxy is exposed.

@@ -39,7 +39,13 @@ rules:
       station: { max_len: 120 }
       limit: { range: [1, 12] }
 
-  homeassistant.list_entities: { class: read }
+  homeassistant.list_entities:
+    class: read
+    constraints:
+      # Optional domain filter ("light", "sensor", ...). A real home has
+      # hundreds of entities and the unfiltered list gets truncated before the
+      # model sees it, so the agent needs to be able to narrow it.
+      domain: { matches: "^[a-z_]{1,32}$" }
   homeassistant.get_state:
     class: read
     constraints:

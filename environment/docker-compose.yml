@@ -1,3 +1,6 @@
+# The sandbox stack. You should not need to edit this file to configure things:
+# every knob comes from the single ../.env (see ../.env.example). Start it with
+# ../sandbox.sh, which passes --env-file for you.
 services:
   hub:
     build:
@@ -5,39 +8,32 @@ services:
       dockerfile: environment/Dockerfile
     image: vahub:dev
     container_name: vahub
+    # Every VAHUB_* setting in ../.env reaches the hub, so the whole config
+    # model is settable from that one file without touching this one.
+    env_file: ../.env
     ports:
-      # Default binds 0.0.0.0, so the hub is reachable from the LAN. The hub has
-      # NO auth of its own, and /api/dev/call executes tools directly, so anyone
-      # who can reach this port can drive your home. Lock it down with either:
-      #   HUB_BIND=127.0.0.1   (loopback only; use the mTLS proxy for remote)
-      # or a firewall rule. Note docker's iptables rules bypass most host firewalls.
-      - "${HUB_BIND:-0.0.0.0}:8080:8080"
+      # HUB_BIND=127.0.0.1 restricts this to the local machine. The hub has no
+      # authentication of its own: whoever reaches this port can drive it.
+      - "${HUB_BIND:-0.0.0.0}:${HUB_PORT:-8080}:8080"
     volumes:
       # Live code, read-only from inside the container.
       - ../project:/app/project:ro
-      # Config and module manifests.
-      - ../project/config:/etc/vahub:ro
-      # Disposable state. `docker compose down -v` wipes this volume: clean slate.
+      # The structured config (policy, schedules, module manifests).
+      - ../config:/etc/vahub:ro
+      # Disposable state: SQLite DB, audit log. Wiped by `sandbox.sh reset`.
       - vahub-state:/var/lib/vahub
-      # The HA long-lived token, written by ha-init (read-only here).
+      # The HA long-lived token written by ha-init (demo mode only).
       - ha-tokens:/tokens:ro
     environment:
-      VAHUB_CONFIG: /etc/vahub/config.yaml
-      TZ_DEFAULT: Europe/Berlin
-      # Real Home Assistant on the internal network. The token is not inline: the
-      # module reads it from HA_TOKEN_FILE (the same file-based path prod uses via
-      # a systemd credential). ha-init writes that file.
+      # Demo mode talks to the simulated Home Assistant on the internal network
+      # and uses the token ha-init generates. The real-ha overlay replaces both
+      # with your instance from ../.env. (environment: overrides env_file:.)
       HA_URL: http://homeassistant:8123
       HA_TOKEN: ""
       HA_TOKEN_FILE: /tokens/ha_token
       HA_VERIFY_SSL: "false"
-      # Self-hosted ntfy (see the ntfy service below). NTFY_URL uses the
-      # internal container name/port, not the host-published one.
-      NOTIFY_BACKEND: ntfy
-      NTFY_URL: http://ntfy:80
-      NTFY_TOPIC: vahub-alerts
-      # LLM API key, read from environment/.env (gitignored). Empty if unset.
-      VAHUB_LLM__API_KEY: "${VAHUB_LLM__API_KEY:-}"
+      # Where the notify module sends pushes: the sandbox's own ntfy by default.
+      NTFY_URL: "${NTFY_URL:-http://ntfy:80}"
     depends_on:
       homeassistant:
         condition: service_healthy
@@ -55,19 +51,20 @@ services:
       retries: 6
       start_period: 5s
 
-  # Real Home Assistant with virtual (mocked) devices from configuration.yaml.
-  # No physical hardware. First boot takes ~30-60s. Not published to the host;
+  # Real Home Assistant with virtual devices from ../config/homeassistant.yaml.
+  # No physical hardware. First boot takes 30-60s. Not published to the host;
   # only the hub and ha-init reach it on the internal network.
+  # Not started in real-ha mode (see docker-compose.realha.yml).
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: vahub-homeassistant
     volumes:
       - ha-config:/config
-      # configuration.yaml is the committed file (live-editable); .storage and
-      # onboarding state live in the ha-config volume and are wiped by `down -v`.
-      - ./homeassistant/config/configuration.yaml:/config/configuration.yaml:ro
+      # The device definitions are a committed, live-editable file; onboarding
+      # state lives in the ha-config volume and is wiped by `sandbox.sh reset`.
+      - ../config/homeassistant.yaml:/config/configuration.yaml:ro
     environment:
-      TZ: Europe/Zurich
+      TZ: "${VAHUB_TIMEZONE:-Europe/Zurich}"
     restart: "no"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8123/manifest.json').status==200 else 1)"]
@@ -76,9 +73,9 @@ services:
       retries: 40
       start_period: 15s
 
-  # One-shot: onboards HA headlessly and writes a long-lived token to ha-tokens.
-  # Reuses the hub image (it has httpx + websockets). Runs as root only to write
-  # the shared volume; the token file it writes is world-readable for the hub.
+  # One-shot: onboards the simulated HA headlessly and writes a long-lived token
+  # to the ha-tokens volume. Reuses the hub image (it has httpx + websockets).
+  # Runs as root only so it can write that shared volume.
   ha-init:
     image: vahub:dev
     container_name: vahub-ha-init
@@ -95,35 +92,24 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # Self-hosted push-notification server (ntfy). Same idea as the homeassistant
-  # service: a real backend running in the sandbox instead of talking to a
-  # third-party cloud. Published to the host (not loopback-only, unlike the
-  # hub) because your phone needs to reach it directly.
+  # Self-hosted push notifications. Published on all interfaces on purpose:
+  # your phone connects to this port directly. Anyone who knows the topic can
+  # read and post to it, so pick an unguessable NTFY_TOPIC or enable ntfy auth.
   ntfy:
     image: binwiederhier/ntfy
     container_name: vahub-ntfy
     command: serve
     ports:
-      # 0.0.0.0, on purpose: the ntfy app on your phone connects to this port.
-      # For access from outside your LAN (WAN), forward this port on your
-      # router to this host, or put it behind the existing mTLS proxy /
-      # Tailscale instead of opening it directly.
-      - "2586:80"
+      - "${NTFY_PORT:-2586}:80"
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
     environment:
-      TZ: Europe/Zurich
-      # What ntfy advertises as its own address (used in links it generates).
-      # "localhost" only works on this machine: set NTFY_BASE_URL in
-      # environment/.env to this host's LAN IP or domain so your phone can
-      # subscribe, e.g. NTFY_BASE_URL=http://192.168.196.3:2586
+      TZ: "${VAHUB_TIMEZONE:-Europe/Zurich}"
+      # Must be an address your phone can reach, not localhost.
       NTFY_BASE_URL: "${NTFY_BASE_URL:-http://localhost:2586}"
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
-      # Anyone who knows the topic name can read/publish to it by default.
-      # Fine for a private/obscure topic name; tighten with NTFY_AUTH_DEFAULT_ACCESS: deny-all
-      # plus `docker compose exec ntfy ntfy user add ...` if you want real auth.
-      NTFY_AUTH_DEFAULT_ACCESS: "read-write"
+      NTFY_AUTH_DEFAULT_ACCESS: "${NTFY_AUTH_DEFAULT_ACCESS:-read-write}"
     restart: "no"
     healthcheck:
       test: ["CMD", "wget", "-q", "--tries=1", "-O", "-", "http://127.0.0.1:80/v1/health"]
@@ -132,16 +118,15 @@ services:
       retries: 6
       start_period: 5s
 
-  # M2: TLS + mTLS auth proxy. Opt-in via `--profile tls` (see `sandbox.sh tls`).
-  # The hub has no auth code; this is the only authenticated way in. Requires
-  # certs from ./proxy/gen-certs.sh. In prod the hub would not publish 8080 at
-  # all and only the proxy would be reachable.
+  # TLS termination + client-certificate auth. Opt-in: `sandbox.sh up --tls`.
+  # The hub has no auth code; this is the only authenticated way in. Needs certs
+  # from ./proxy/gen-certs.sh.
   proxy:
     image: caddy:2
     container_name: vahub-proxy
     profiles: ["tls"]
     ports:
-      - "127.0.0.1:8443:8443"
+      - "127.0.0.1:${PROXY_PORT:-8443}:8443"
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./proxy/certs:/certs:ro

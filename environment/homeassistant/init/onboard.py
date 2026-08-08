@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 import httpx
 import websockets
@@ -96,6 +97,11 @@ async def access_token(client: httpx.AsyncClient, code: str) -> str:
 
 async def create_llt(access: str) -> str:
     ws_url = HA.replace("https", "wss", 1).replace("http", "ws", 1) + "/api/websocket"
+    # The client_name must be unique: Home Assistant rejects a second token with
+    # a name it already has (an opaque "Unknown error"). That happens whenever
+    # the token volume is wiped but HA's own state survives, e.g. after a reset,
+    # so the name carries a timestamp rather than being a fixed string.
+    client_name = f"vahub-hub-{int(time.time())}"
     async with websockets.connect(ws_url) as ws:
         await ws.recv()  # auth_required
         await ws.send(json.dumps({"type": "auth", "access_token": access}))
@@ -103,7 +109,7 @@ async def create_llt(access: str) -> str:
         if msg.get("type") != "auth_ok":
             raise SystemExit(f"ws auth failed: {json.dumps(msg)}")
         await ws.send(json.dumps({"id": 1, "type": "auth/long_lived_access_token",
-                                  "client_name": "vahub-hub", "lifespan": 3650}))
+                                  "client_name": client_name, "lifespan": 3650}))
         while True:
             msg = json.loads(await ws.recv())
             if msg.get("id") == 1:

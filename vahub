@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Entry point for the whole project: ./vahub up, ./vahub status, ./vahub push ...
+# Everything is configured in ./.env (copy .env.example to get started).
+exec "$(dirname "$0")/environment/sandbox.sh" "$@"

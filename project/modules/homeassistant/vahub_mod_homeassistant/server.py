@@ -44,11 +44,21 @@ _client = httpx.AsyncClient(
 
 
 @mcp.tool()
-async def list_entities() -> list[dict]:
-    """List entities with their current state."""
+async def list_entities(domain: str | None = None) -> list[dict]:
+    """List entities with their current state.
+
+    domain: optional filter, e.g. "light", "sensor", "lock", "switch". A real
+      home has hundreds of entities and the full list is truncated before it
+      reaches the model, so filter by domain whenever you know what you are
+      looking for (use "sensor" for temperature, humidity and similar readings).
+    """
     r = await _client.get("/api/states")
     r.raise_for_status()
-    return [{"entity_id": s["entity_id"], "state": s["state"]} for s in r.json()]
+    out = [{"entity_id": s["entity_id"], "state": s["state"]} for s in r.json()]
+    if domain:
+        prefix = f"{domain.strip().rstrip('.')}."
+        out = [e for e in out if e["entity_id"].startswith(prefix)]
+    return out
 
 
 @mcp.tool()
